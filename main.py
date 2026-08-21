@@ -189,7 +189,7 @@ async def perform_vote(page):
 
 
 async def main():
-    """Boucle infinie de votes"""
+    """Effectue UN seul vote et s'arrête"""
     async with async_playwright() as playwright:
         logger.info("")
         logger.info("🚀 ═══════════════════════════════════════════")
@@ -200,32 +200,21 @@ async def main():
         logger.info(f"   Gemini: ✅ Connecté")
         logger.info("🚀 ═══════════════════════════════════════════")
         logger.info("")
-
-        # Lancer Chromium VISIBLE (headless=False)
-        browser = await playwright.chromium.launch(headless=False)
+        
+        browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page()
-
-        cycle = 1
-        while True:
-            logger.info(f"\n{'=' * 60}")
-            logger.info(f"CYCLE {cycle}")
-            logger.info(f"{'=' * 60}")
-
-            success, wait_seconds = await perform_vote(page)
-
-            logger.info(f"")
-            logger.info(f"Résultat: {'✅ SUCCÈS' if success else '❌ ÉCHEC'}")
-            logger.info(f"Attente: {wait_seconds // 60}m {wait_seconds % 60}s")
-            logger.info(f"")
-
-            # Countdown avec affichage
-            for remaining in range(wait_seconds, 0, -1):
-                m, s = divmod(remaining, 60)
-                print(f"\r⏳ Prochain vote: {m:02d}m {s:02d}s", end="", flush=True)
-                await asyncio.sleep(1)
-            print()
-
-            cycle += 1
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"VOTE")
+        logger.info(f"{'='*60}")
+        
+        success, _ = await perform_vote(page)
+        
+        logger.info(f"")
+        logger.info(f"Résultat: {'✅ SUCCÈS' if success else '❌ ÉCHEC'}")
+        logger.info(f"")
+        
+        await browser.close()
 
 
 # ============================================================================
