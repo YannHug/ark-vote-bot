@@ -9,6 +9,9 @@ jobs:
   vote:
     runs-on: ubuntu-latest
     
+    container:
+      image: mcr.microsoft.com/playwright:v1.44.0-focal
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -17,16 +20,10 @@ jobs:
         with:
           python-version: '3.12'
       
-      - name: Install system dependencies for display
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils
-      
       - name: Install Python dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
-          playwright install chromium
-          playwright install-deps
       
       - name: Run bot with virtual display
         env:
