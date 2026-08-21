@@ -189,7 +189,7 @@ async def perform_vote(page):
 
 
 async def main():
-    """Effectue UN seul vote et s'arrête"""
+    """Effectue UN vote avec retry si fail"""
     async with async_playwright() as playwright:
         logger.info("")
         logger.info("🚀 ═══════════════════════════════════════════")
@@ -204,15 +204,28 @@ async def main():
         browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page()
         
-        logger.info(f"\n{'='*60}")
-        logger.info(f"VOTE")
-        logger.info(f"{'='*60}")
-        
-        success, _ = await perform_vote(page)
-        
-        logger.info(f"")
-        logger.info(f"Résultat: {'✅ SUCCÈS' if success else '❌ ÉCHEC'}")
-        logger.info(f"")
+        # Essayer jusqu'à 3 fois
+        max_tentatives = 3
+        for tentative in range(1, max_tentatives + 1):
+            logger.info(f"\n{'='*60}")
+            logger.info(f"TENTATIVE {tentative}/{max_tentatives}")
+            logger.info(f"{'='*60}")
+            
+            success, _ = await perform_vote(page)
+            
+            logger.info(f"")
+            logger.info(f"Résultat: {'✅ SUCCÈS' if success else '❌ ÉCHEC'}")
+            logger.info(f"")
+            
+            # Si succès, arrêter!
+            if success:
+                logger.info("🎉 VOTE RÉUSSI! Arrêt.")
+                break
+            
+            # Si échec et pas la dernière tentative, relancer
+            if tentative < max_tentatives:
+                logger.info(f"⏳ Attente 5 secondes avant retry...")
+                await asyncio.sleep(5)
         
         await browser.close()
 
