@@ -2,7 +2,7 @@ name: ARK Vote Bot
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # Toutes les 2 heures
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       
@@ -21,10 +21,12 @@ jobs:
         run: |
           pip install -r requirements.txt
           playwright install chromium
+          playwright install-deps
       
       - name: Run bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
           PLAYER_NAME: ${{ secrets.PLAYER_NAME }}
-        run: python main.py
+        timeout-minutes: 10
+        run: timeout 300 python main.py || true
