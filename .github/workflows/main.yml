@@ -17,16 +17,20 @@ jobs:
         with:
           python-version: '3.12'
       
-      - name: Install dependencies
+      - name: Install system dependencies for display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-utils
+      
+      - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
           playwright install chromium
           playwright install-deps
       
-      - name: Run bot
+      - name: Run bot with virtual display
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
           PLAYER_NAME: ${{ secrets.PLAYER_NAME }}
-        timeout-minutes: 10
-        run: timeout 300 python main.py || true
+        run: xvfb-run -a python main.py
