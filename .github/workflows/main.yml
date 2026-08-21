@@ -9,22 +9,32 @@ jobs:
   vote:
     runs-on: ubuntu-latest
     
-    container:
-      image: mcr.microsoft.com/playwright:v1.44.0-focal
-    
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install Python and dependencies
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install system dependencies
         run: |
-          apt-get update
-          apt-get install -y python3 python3-pip
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y xvfb libxkbcommon0 libxkbcommon-x11-0
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
+          playwright install-deps
       
       - name: Run bot with virtual display
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
           PLAYER_NAME: ${{ secrets.PLAYER_NAME }}
-        run: xvfb-run -a python3 main.py
+        run: xvfb-run -a python main.py
