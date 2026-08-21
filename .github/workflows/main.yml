@@ -15,19 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      
-      - name: Install Python dependencies
+      - name: Install Python and dependencies
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          apt-get update
+          apt-get install -y python3.12 python3-pip
+          python3.12 -m pip install --upgrade pip
+          python3.12 -m pip install -r requirements.txt
       
       - name: Run bot with virtual display
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TARGET_URL: ${{ secrets.TARGET_URL }}
           PLAYER_NAME: ${{ secrets.PLAYER_NAME }}
-        run: xvfb-run -a python main.py
+        run: xvfb-run -a python3.12 main.py
