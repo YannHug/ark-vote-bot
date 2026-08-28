@@ -1,3 +1,5 @@
+name: ARK Vote Bot
+
 on:
   schedule:
     - cron: '0 */2 * * *'
@@ -9,14 +11,13 @@ jobs:
     
     steps:
       - name: Attente aléatoire (0 à 20 minutes)
-        # S'applique uniquement si le workflow est déclenché par le cron schedule
         if: github.event_name == 'schedule'
         run: |
           DELAY=$(( RANDOM % 1201 ))
           echo "Déclenchement automatique détecté."
           echo "Attente de $DELAY secondes avant de lancer le bot..."
           sleep $DELAY
-
+      
       - uses: actions/checkout@v4
       
       - name: Setup Python
