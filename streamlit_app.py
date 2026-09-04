@@ -5,7 +5,7 @@ import re
 import shutil
 
 import streamlit as st
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from google import genai
 from google.genai import types
 
@@ -103,37 +103,48 @@ async def perform_vote(chromium_path: str) -> bool:
             await close_cookie_popup(page)
 
             logger.info("📝 Remplissage du pseudo...")
-            pseudo_input = page.locator("input[name*='pseudo' i]").first
-            await pseudo_input.wait_for(timeout=10000)
+            pseudo_input = page.locator(
+                "input[name='playername'], input[placeholder*='seudo' i]"
+            ).first
+            await pseudo_input.wait_for(timeout=15000)
             await pseudo_input.fill(PLAYER_NAME)
 
-            try:
-                widget = page.locator(".mtcaptcha").first
-                await widget.wait_for(timeout=10000)
-                await widget.scroll_into_view_if_needed()
-            except Exception:
-                logger.warning("⚠️ Widget CAPTCHA pas détecté")
+            logger.info("🧩 Attente du widget CAPTCHA (iframe MTCaptcha)...")
+            captcha_iframe_el = page.locator("#mtcaptcha-iframe-1, iframe[title='MTCaptcha']").first
+            await captcha_iframe_el.wait_for(state="visible", timeout=20000)
+            await asyncio.sleep(2)  # laisser l'image du CAPTCHA finir de se dessiner
 
-            logger.info("⏳ Attente de la génération de l'image CAPTCHA...")
-            await asyncio.sleep(8)
-
-            screenshot = await page.screenshot(full_page=True)
+            logger.info("📸 Capture de l'image du CAPTCHA...")
+            screenshot = await captcha_iframe_el.screenshot()
             captcha = read_captcha_with_gemini(screenshot)
 
             if not captcha:
                 await browser.close()
                 return False
 
-            logger.info("⌨️ Navigation au champ CAPTCHA...")
-            for _ in range(4):
-                await page.keyboard.press("Tab")
-                await asyncio.sleep(0.2)
+            logger.info(f"⌨️ Saisie du CAPTCHA dans le champ dédié: {captcha}")
+            captcha_input = page.frame_locator(
+                "#mtcaptcha-iframe-1, iframe[title='MTCaptcha']"
+            ).locator("input[type='text']").first
+            await captcha_input.fill(captcha)
+            await captcha_input.press("Tab")  # déclenche la validation côté MTCaptcha
 
-            await page.keyboard.type(captcha, delay=100)
-            await asyncio.sleep(1)
+            logger.info("⏳ Attente de la validation du CAPTCHA...")
+            try:
+                await page.wait_for_function(
+                    """() => {
+                        const el = document.querySelector('#captchaToken')
+                            || document.querySelector('.mtcaptcha-verifiedtoken');
+                        return el && el.value && el.value.length > 0;
+                    }""",
+                    timeout=15000,
+                )
+                logger.info("✅ CAPTCHA validé")
+            except PlaywrightTimeoutError:
+                logger.warning("⚠️ Token CAPTCHA non confirmé, tentative de vote quand même")
 
             logger.info("🖱️ Clic du bouton VOTER...")
-            vote_btn = page.locator("button").filter(
+            vote_btn = page.locator("button[type='submit']").filter(
                 has_text=re.compile(r"voter", re.IGNORECASE)
             ).first
 
