@@ -16,7 +16,7 @@ from google.genai import types
 TARGET_URL = os.getenv("TARGET_URL", "https://top-serveurs.net/ark/vote/1ngames")
 PLAYER_NAME = os.getenv("PLAYER_NAME", "Holybruiser")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-2.5-flash"  # modèle multimodal stable pour lire le CAPTCHA
+GEMINI_MODEL = "gemini-3.6-flash"  # modèle multimodal actuel (confirmé par l'API Google)
 
 if not GEMINI_API_KEY:
     st.error("❌ GEMINI_API_KEY manquante dans les secrets Streamlit !")
@@ -187,10 +187,16 @@ params = st.query_params  # nécessite streamlit >= 1.30.0 (voir requirements.tx
 if params.get("action") == "vote":
     st.info("Vote en cours...")
     result = asyncio.run(perform_vote(CHROMIUM_PATH))
-    st.success("✅ VOTE OK") if result else st.error("❌ FAILED")
+    if result:
+        st.success("✅ VOTE OK")
+    else:
+        st.error("❌ FAILED")
 else:
     st.title("🤖 ARK Vote Bot")
     st.write(f"Player: {PLAYER_NAME}")
     if st.button("TEST VOTE"):
         result = asyncio.run(perform_vote(CHROMIUM_PATH))
-        st.success("✅ OK") if result else st.error("❌ FAIL")
+        if result:
+            st.success("✅ OK")
+        else:
+            st.error("❌ FAIL")
