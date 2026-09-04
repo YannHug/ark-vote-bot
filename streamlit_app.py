@@ -126,25 +126,27 @@ async def perform_vote(chromium_path: str) -> bool:
             captcha_input = page.frame_locator(
                 "#mtcaptcha-iframe-1, iframe[title='MTCaptcha']"
             ).locator("input[type='text']").first
-            await captcha_input.fill(captcha)
+            await captcha_input.click()
+            await captcha_input.press_sequentially(captcha, delay=120)
             await captcha_input.press("Tab")  # déclenche la validation côté MTCaptcha
 
-            logger.info("⏳ Attente de la validation du CAPTCHA...")
+            logger.info("⏳ Attente de l'activation du bouton VOTER (validation CAPTCHA)...")
             try:
                 await page.wait_for_function(
                     """() => {
-                        const el = document.querySelector('#captchaToken')
-                            || document.querySelector('.mtcaptcha-verifiedtoken');
-                        return el && el.value && el.value.length > 0;
+                        const b = document.querySelector('#btnSubmitVote');
+                        return b && !b.disabled;
                     }""",
                     timeout=15000,
                 )
-                logger.info("✅ CAPTCHA validé")
+                logger.info("✅ CAPTCHA validé, bouton VOTER activé")
             except PlaywrightTimeoutError:
-                logger.warning("⚠️ Token CAPTCHA non confirmé, tentative de vote quand même")
+                logger.warning("⚠️ Bouton VOTER toujours désactivé après le CAPTCHA")
+                await browser.close()
+                return False
 
             logger.info("🖱️ Clic du bouton VOTER...")
-            vote_btn = page.locator("button[type='submit']").filter(
+            vote_btn = page.locator("#btnSubmitVote, button[type='submit']").filter(
                 has_text=re.compile(r"voter", re.IGNORECASE)
             ).first
 
