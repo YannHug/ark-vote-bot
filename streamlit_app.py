@@ -2,8 +2,7 @@ import asyncio
 import logging
 import os
 import re
-import subprocess
-import sys
+import shutil
 
 import streamlit as st
 from playwright.async_api import async_playwright
@@ -29,28 +28,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# INSTALLATION DE CHROMIUM (une seule fois par conteneur)
+# LOCALISATION DU CHROMIUM SYSTÈME (installé via apt / packages.txt)
 # ============================================================================
 
 
 @st.cache_resource
-def install_playwright_browsers():
-    """Télécharge le binaire Chromium requis par Playwright.
-    Les dépendances système (libs) doivent être listées dans packages.txt
-    (voir fichier fourni), car elles nécessitent les droits root disponibles
-    uniquement au moment du build."""
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        logger.info("✅ Chromium installé\n%s", result.stdout)
-        return True
-    except subprocess.CalledProcessError as e:
-        logger.error("❌ Échec installation Chromium: %s", e.stderr)
-        return False
+def find_chromium_binary():
+    """Le binaire Chromium est installé par apt (voir packages.txt) plutôt que
+    téléchargé par Playwright, pour éviter les conflits de dépendances
+    système. On le localise une seule fois par conteneur."""
+    candidates = ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            logger.info(f"✅ Chromium trouvé: {path}")
+            return path
+    logger.error("❌ Aucun binaire Chromium trouvé sur le système")
+    return None
 
 
 # ============================================================================
@@ -93,10 +87,14 @@ def read_captcha_with_gemini(image_bytes: bytes) -> str:
         return ""
 
 
-async def perform_vote() -> bool:
+async def perform_vote(chromium_path: str) -> bool:
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(
+                executable_path=chromium_path,
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
             page = await browser.new_page()
 
             logger.info("🌐 Navigation vers le site...")
@@ -163,10 +161,13 @@ async def perform_vote() -> bool:
 
 st.set_page_config(page_title="ARK Bot", page_icon="🤖")
 
-if not install_playwright_browsers():
+CHROMIUM_PATH = find_chromium_binary()
+
+if not CHROMIUM_PATH:
     st.error(
-        "❌ Impossible d'installer Chromium. Vérifie que packages.txt est bien "
-        "présent à la racine du repo et regarde les logs de build."
+        "❌ Chromium introuvable sur le système. Vérifie que packages.txt "
+        "(contenant juste 'chromium') est bien présent à la racine du repo, "
+        "et regarde les logs de build pour une erreur d'installation apt."
     )
     st.stop()
 
@@ -174,11 +175,11 @@ params = st.query_params  # nécessite streamlit >= 1.30.0 (voir requirements.tx
 
 if params.get("action") == "vote":
     st.info("Vote en cours...")
-    result = asyncio.run(perform_vote())
+    result = asyncio.run(perform_vote(CHROMIUM_PATH))
     st.success("✅ VOTE OK") if result else st.error("❌ FAILED")
 else:
     st.title("🤖 ARK Vote Bot")
     st.write(f"Player: {PLAYER_NAME}")
     if st.button("TEST VOTE"):
-        result = asyncio.run(perform_vote())
+        result = asyncio.run(perform_vote(CHROMIUM_PATH))
         st.success("✅ OK") if result else st.error("❌ FAIL")
