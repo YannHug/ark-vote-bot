@@ -2,107 +2,180 @@ import asyncio
 import logging
 import os
 import re
-import base64
+import subprocess
+import sys
+
 import streamlit as st
 from playwright.async_api import async_playwright
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
-# CONFIG
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
 TARGET_URL = os.getenv("TARGET_URL", "https://top-serveurs.net/ark/vote/1ngames")
 PLAYER_NAME = os.getenv("PLAYER_NAME", "Holybruiser")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = "gemini-2.5-flash"  # modèle multimodal stable pour lire le CAPTCHA
 
 if not GEMINI_API_KEY:
-    st.error("❌ GEMINI_API_KEY manquante!")
+    st.error("❌ GEMINI_API_KEY manquante dans les secrets Streamlit !")
     st.stop()
 
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# INSTALLATION DE CHROMIUM (une seule fois par conteneur)
+# ============================================================================
+
+
+@st.cache_resource
+def install_playwright_browsers():
+    """Télécharge le binaire Chromium requis par Playwright.
+    Les dépendances système (libs) doivent être listées dans packages.txt
+    (voir fichier fourni), car elles nécessitent les droits root disponibles
+    uniquement au moment du build."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        logger.info("✅ Chromium installé\n%s", result.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error("❌ Échec installation Chromium: %s", e.stderr)
+        return False
+
+
+# ============================================================================
 # FONCTIONS
+# ============================================================================
+
+
 async def close_cookie_popup(page):
     try:
-        btn = page.locator("button").filter(has_text=re.compile(r"ne pas consentir", re.IGNORECASE)).first
+        btn = page.locator("button").filter(
+            has_text=re.compile(r"ne pas consentir", re.IGNORECASE)
+        ).first
         if await btn.count() > 0:
             await btn.click()
             await asyncio.sleep(1)
-    except:
+    except Exception:
         pass
 
-def read_captcha_with_gemini(image_bytes):
+
+def read_captcha_with_gemini(image_bytes: bytes) -> str:
+    """Envoie l'image à Gemini pour lire le CAPTCHA (nouveau SDK google-genai)."""
     try:
-        b64_image = base64.standard_b64encode(image_bytes).decode()
-        model = genai.GenerativeModel('gemini-3.6-flash')
-        response = model.generate_content([
-            "Lis CAPTCHA 4-6 chars MAJUSCULES uniquement",
-            {"mime_type": "image/png", "data": b64_image}
-        ])
-        captcha = response.text.strip().upper()
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[
+                "Lis le CAPTCHA dans cette image. C'est du texte avec des chiffres et "
+                "des lettres (4-6 caractères). Réponds UNIQUEMENT avec les caractères "
+                "visibles, en MAJUSCULES, sans aucun autre mot. Exemple: AB12C3",
+                types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+            ],
+        )
+        captcha = (response.text or "").strip().upper()
         if captcha and 4 <= len(captcha) <= 10:
+            logger.info(f"✅ CAPTCHA lu: {captcha}")
             return captcha
+        logger.warning(f"⚠️ CAPTCHA non lisible: '{captcha}'")
         return ""
-    except:
+    except Exception as e:
+        logger.error(f"❌ Erreur Gemini: {e}")
         return ""
 
-async def perform_vote():
+
+async def perform_vote() -> bool:
     try:
         async with async_playwright() as p:
-            b = await p.chromium.launch(headless=True)
-            pg = await b.new_page()
-            await pg.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
-            await close_cookie_popup(pg)
-            
-            inp = pg.locator("input[name*='pseudo' i]").first
-            await inp.wait_for(timeout=10000)
-            await inp.fill(PLAYER_NAME)
-            
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+
+            logger.info("🌐 Navigation vers le site...")
+            await page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
+
+            await close_cookie_popup(page)
+
+            logger.info("📝 Remplissage du pseudo...")
+            pseudo_input = page.locator("input[name*='pseudo' i]").first
+            await pseudo_input.wait_for(timeout=10000)
+            await pseudo_input.fill(PLAYER_NAME)
+
             try:
-                w = pg.locator(".mtcaptcha").first
-                await w.wait_for(timeout=10000)
-            except:
-                pass
-            
+                widget = page.locator(".mtcaptcha").first
+                await widget.wait_for(timeout=10000)
+                await widget.scroll_into_view_if_needed()
+            except Exception:
+                logger.warning("⚠️ Widget CAPTCHA pas détecté")
+
+            logger.info("⏳ Attente de la génération de l'image CAPTCHA...")
             await asyncio.sleep(8)
-            ss = await pg.screenshot(full_page=True)
-            cap = read_captcha_with_gemini(ss)
-            
-            if not cap:
-                await b.close()
+
+            screenshot = await page.screenshot(full_page=True)
+            captcha = read_captcha_with_gemini(screenshot)
+
+            if not captcha:
+                await browser.close()
                 return False
-            
+
+            logger.info("⌨️ Navigation au champ CAPTCHA...")
             for _ in range(4):
-                await pg.keyboard.press("Tab")
-                await asyncio.sleep(0.1)
-            
-            await pg.keyboard.type(cap, delay=50)
+                await page.keyboard.press("Tab")
+                await asyncio.sleep(0.2)
+
+            await page.keyboard.type(captcha, delay=100)
             await asyncio.sleep(1)
-            
-            btn = pg.locator("button").filter(has_text=re.compile(r"voter", re.IGNORECASE)).first
-            if await btn.count() > 0:
-                await btn.click()
+
+            logger.info("🖱️ Clic du bouton VOTER...")
+            vote_btn = page.locator("button").filter(
+                has_text=re.compile(r"voter", re.IGNORECASE)
+            ).first
+
+            if await vote_btn.count() > 0:
+                await vote_btn.click()
             else:
-                await b.close()
+                logger.error("❌ Bouton VOTER non trouvé")
+                await browser.close()
                 return False
-            
+
+            logger.info("⏳ Attente de la validation serveur...")
             await asyncio.sleep(15)
-            await b.close()
+
+            await browser.close()
             return True
+
     except Exception as e:
-        logger.error(f"Erreur: {e}")
+        logger.error(f"❌ Erreur: {e}")
         return False
 
-# UI
+
+# ============================================================================
+# UI STREAMLIT
+# ============================================================================
+
 st.set_page_config(page_title="ARK Bot", page_icon="🤖")
-params = st.query_params
+
+if not install_playwright_browsers():
+    st.error(
+        "❌ Impossible d'installer Chromium. Vérifie que packages.txt est bien "
+        "présent à la racine du repo et regarde les logs de build."
+    )
+    st.stop()
+
+params = st.query_params  # nécessite streamlit >= 1.30.0 (voir requirements.txt)
 
 if params.get("action") == "vote":
-    st.info("Vote...")
+    st.info("Vote en cours...")
     result = asyncio.run(perform_vote())
-    if result:
-        st.success("✅ VOTE OK")
-    else:
-        st.error("❌ FAILED")
+    st.success("✅ VOTE OK") if result else st.error("❌ FAILED")
 else:
     st.title("🤖 ARK Vote Bot")
     st.write(f"Player: {PLAYER_NAME}")
