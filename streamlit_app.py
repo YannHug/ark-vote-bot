@@ -77,16 +77,21 @@ def read_captcha_with_gemini(image_bytes: bytes) -> str:
             contents=[
                 "Lis le CAPTCHA dans cette image. C'est du texte avec des chiffres et "
                 "des lettres (4-6 caractères). Réponds UNIQUEMENT avec les caractères "
-                "visibles, en MAJUSCULES, sans aucun autre mot. Exemple: AB12C3",
+                "visibles, en MAJUSCULES, sans espace ni aucun autre mot autour. "
+                "Exemple de bonne réponse: AB12C3. "
+                "Si tu ne vois vraiment aucun texte lisible, réponds exactement: NONE",
                 types.Part.from_bytes(data=image_bytes, mime_type="image/png"),
             ],
         )
-        captcha = (response.text or "").strip().upper()
-        if captcha and 4 <= len(captcha) <= 10:
-            logger.info(f"✅ CAPTCHA lu: {captcha}")
-            return captcha
-        logger.warning(f"⚠️ CAPTCHA non lisible: '{captcha}'")
-        return ""
+        raw = (response.text or "").strip().upper()
+        captcha = re.sub(r"[^A-Z0-9]", "", raw)  # ne garder que lettres/chiffres
+
+        if captcha in ("NONE", "AUCUN", "") or not (4 <= len(captcha) <= 10):
+            logger.warning(f"⚠️ CAPTCHA non lisible: '{raw}'")
+            return ""
+
+        logger.info(f"✅ CAPTCHA lu: {captcha}")
+        return captcha
     except Exception as e:
         logger.error(f"❌ Erreur Gemini: {e}")
         return ""
