@@ -128,11 +128,17 @@ async def perform_vote(chromium_path: str) -> bool:
             logger.info("🧩 Attente du widget CAPTCHA (iframe MTCaptcha)...")
             captcha_iframe_el = page.locator("#mtcaptcha-iframe-1, iframe[title='MTCaptcha']").first
             await captcha_iframe_el.wait_for(state="visible", timeout=20000)
-            await asyncio.sleep(2)  # laisser l'image du CAPTCHA finir de se dessiner
+            await asyncio.sleep(5)  # laisser l'image du CAPTCHA finir de se dessiner (latence proxy)
 
             logger.info("📸 Capture de l'image du CAPTCHA...")
             screenshot = await captcha_iframe_el.screenshot()
             captcha = read_captcha_with_gemini(screenshot)
+
+            if not captcha:
+                logger.info("🔁 Nouvelle tentative de capture après un délai supplémentaire...")
+                await asyncio.sleep(4)
+                screenshot = await captcha_iframe_el.screenshot()
+                captcha = read_captcha_with_gemini(screenshot)
 
             if not captcha:
                 await browser.close()
