@@ -1,5 +1,7 @@
-libpango-1.0-0
-libpango-gobject-1.0-0
-libcairo2
+libpq5
 libglib2.0-0
-libnss3
+libcairo2
+libpango-1.0-0
+libx11-6
+libxext6
+libxrender1
