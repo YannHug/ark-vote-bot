@@ -158,10 +158,31 @@ async def perform_vote(chromium_path: str) -> bool:
                 return False
 
             logger.info("⏳ Attente de la validation serveur...")
-            await asyncio.sleep(15)
+            await asyncio.sleep(8)
 
+            final_url = page.url
+            final_text = (await page.content()).lower()
+            logger.info(f"🔎 URL finale: {final_url}")
+
+            success_markers = ["merci d'avoir voté", "vote enregistré", "vote pris en compte", "/success"]
+            cooldown_markers = ["déjà voté", "patienter", "revenez dans", "prochain vote"]
+
+            if any(m in final_text for m in success_markers) or "/success" in final_url:
+                logger.info("🎉 Le site confirme le vote (message de succès détecté)")
+                await browser.close()
+                return True
+
+            if any(m in final_text for m in cooldown_markers):
+                logger.info("🎉 Le site indique un cooldown de vote actif : la tentative a bien été comptabilisée")
+                await browser.close()
+                return True
+
+            logger.warning(
+                "⚠️ Aucun message de confirmation NI de cooldown détecté après le clic — "
+                "statut réellement incertain (le vote a peut-être été silencieusement rejeté)"
+            )
             await browser.close()
-            return True
+            return False
 
     except Exception as e:
         logger.error(f"❌ Erreur: {e}")
