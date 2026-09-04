@@ -18,6 +18,11 @@ PLAYER_NAME = os.getenv("PLAYER_NAME", "Holybruiser")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-3.6-flash"  # modèle multimodal actuel (confirmé par l'API Google)
 
+# Proxy maison (via Tailscale Funnel) pour sortir par une IP résidentielle
+PROXY_SERVER = os.getenv("PROXY_SERVER")  # ex: https://desktop-hle4ud6.tailccd8fe.ts.net
+PROXY_USERNAME = os.getenv("PROXY_USERNAME")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
+
 if not GEMINI_API_KEY:
     st.error("❌ GEMINI_API_KEY manquante dans les secrets Streamlit !")
     st.stop()
@@ -90,11 +95,22 @@ def read_captcha_with_gemini(image_bytes: bytes) -> str:
 async def perform_vote(chromium_path: str) -> bool:
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                executable_path=chromium_path,
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-            )
+            launch_kwargs = {
+                "executable_path": chromium_path,
+                "headless": True,
+                "args": ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            }
+            if PROXY_SERVER:
+                launch_kwargs["proxy"] = {
+                    "server": PROXY_SERVER,
+                    "username": PROXY_USERNAME,
+                    "password": PROXY_PASSWORD,
+                }
+                logger.info(f"🌍 Utilisation du proxy maison: {PROXY_SERVER}")
+            else:
+                logger.warning("⚠️ Aucun proxy configuré — connexion directe depuis Streamlit Cloud")
+
+            browser = await p.chromium.launch(**launch_kwargs)
             page = await browser.new_page()
 
             logger.info("🌐 Navigation vers le site...")
